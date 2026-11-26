@@ -32,9 +32,14 @@ jobs:
 
       - name: Build APK
         env:
-          # Жестко ограничиваем память для Gradle и Kotlin, чтобы не превысить 7 ГБ раннера
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -Dkotlin.daemon.jvmargs=-Xmx2048m"
-        run: gradle assembleDebug --no-daemon --max-workers=2 --stacktrace
+          GRADLE_OPTS: "-Xmx4608m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8"
+        run: >
+          gradle assembleDebug
+          --no-daemon
+          --max-workers=2
+          --stacktrace
+          -Pkotlin.compiler.execution.strategy="in-process"
+          -Dorg.gradle.jvmargs="-Xmx4608m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
