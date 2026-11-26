@@ -122,9 +122,12 @@ fun EasyHostApp() {
         val root = DocumentFile.fromTreeUri(context, uri)
         sites = root?.listFiles()?.filter { it.isDirectory }?.map { dir ->
             val children = dir.listFiles()
-            Site(dir.name ?: "Без названия", uri,
+            Site(
+                dir.name ?: "Без названия",
+                uri,
                 children.any { it.name.equals("index.html", true) },
-                children.any { it.name.equals("index.php", true) })
+                children.any { it.name.equals("index.php", true) }
+            )
         }?.sortedBy { it.name.lowercase() } ?: emptyList()
     }
 
@@ -159,12 +162,19 @@ fun EasyHostApp() {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(9.dp).background(if (running) Accent else Muted, RoundedCornerShape(50)))
                             Spacer(Modifier.width(9.dp))
-                            Text(if (running) "СЕРВЕР РАБОТАЕТ" else "СЕРВЕР ОСТАНОВЛЕН",
-                                color = if (running) Accent else Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                if (running) "СЕРВЕР РАБОТАЕТ" else "СЕРВЕР ОСТАНОВЛЕН",
+                                color = if (running) Accent else Muted,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                         Spacer(Modifier.height(12.dp))
-                        Text(if (running) "http://127.0.0.1:$port" else "Готов к запуску",
-                            fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (running) "http://127.0.0.1:$port" else "Готов к запуску",
+                            fontSize = 21.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                         Text(status, color = Muted, fontSize = 12.sp)
                         Spacer(Modifier.height(16.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -172,32 +182,60 @@ fun EasyHostApp() {
                                 onClick = {
                                     val site = selected
                                     val p = port.toIntOrNull()
-                                    if (site == null) status = "Сначала выберите проект"
-                                    else if (p == null || p !in 1024..65535) status = "Порт должен быть 1024–65535"
-                                    else {
+                                    if (site == null) {
+                                        status = "Сначала выберите проект"
+                                    } else if (p == null || p !in 1024..65535) {
+                                        status = "Порт должен быть 1024–65535"
+                                    } else {
                                         try {
                                             server?.stop()
                                             server = StaticSiteServer(context, site.uri, site.name, p).also { it.start() }
                                             running = true
-                                            status = "Раздаётся ${site.name}"\n                                            showServerNotification(context, port, site.name)
-                                        } catch (e: Exception) { running = false; hideServerNotification(context); status = e.message ?: "Ошибка запуска" }
+                                            status = "Раздаётся ${site.name}"
+                                            showServerNotification(context, port, site.name)
+                                        } catch (e: Exception) {
+                                            running = false
+                                            hideServerNotification(context)
+                                            status = e.message ?: "Ошибка запуска"
+                                        }
                                     }
                                 },
                                 enabled = !running,
                                 colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Bg),
                                 modifier = Modifier.weight(1f)
-                            ) { Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Запустить") }
-                            OutlinedButton(onClick = {
-                                server?.stop(); server = null; running = false; status = "Сервер остановлен"; hideServerNotification(context)
-                            }, enabled = running, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Rounded.Stop, null); Spacer(Modifier.width(6.dp)); Text("Стоп")
+                            ) {
+                                Icon(Icons.Rounded.PlayArrow, null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Запустить")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    server?.stop()
+                                    server = null
+                                    running = false
+                                    status = "Сервер остановлен"
+                                    hideServerNotification(context)
+                                },
+                                enabled = running,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Rounded.Stop, null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Стоп")
                             }
                         }
                     }
                 }
                 Spacer(Modifier.height(22.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("МОИ ПРОЕКТЫ", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.weight(1f))
+                    Text(
+                        "МОИ ПРОЕКТЫ",
+                        color = Muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp,
+                        modifier = Modifier.weight(1f)
+                    )
                     TextButton(onClick = { rootUri?.let { scan(it) } }) { Text("Обновить", color = Accent) }
                 }
                 if (rootUri == null) {
@@ -227,12 +265,16 @@ fun EasyHostApp() {
                                     Spacer(Modifier.width(12.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text(site.name, fontWeight = FontWeight.SemiBold)
-                                        Text(buildString {
-                                            if (site.hasIndex) append("HTML")
-                                            if (site.hasIndex && site.hasPhp) append("  ·  ")
-                                            if (site.hasPhp) append("PHP")
-                                            if (!site.hasIndex && !site.hasPhp) append("Нет index.html / index.php")
-                                        }, color = Muted, fontSize = 11.sp)
+                                        Text(
+                                            buildString {
+                                                if (site.hasIndex) append("HTML")
+                                                if (site.hasIndex && site.hasPhp) append("  ·  ")
+                                                if (site.hasPhp) append("PHP")
+                                                if (!site.hasIndex && !site.hasPhp) append("Нет index.html / index.php")
+                                            },
+                                            color = Muted,
+                                            fontSize = 11.sp
+                                        )
                                     }
                                     if (active) Text("ВЫБРАН", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                 }
@@ -241,7 +283,11 @@ fun EasyHostApp() {
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Icon(Icons.Rounded.Language, null, tint = Muted, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("HTML/CSS/JS · PHP runtime integration pending", color = Muted, fontSize = 10.sp)
@@ -258,7 +304,11 @@ fun EasyHostApp() {
                     Column {
                         Text("Порт сервера", color = Muted, fontSize = 12.sp)
                         Spacer(Modifier.height(6.dp))
-                        OutlinedTextField(value = port, onValueChange = { port = it.filter(Char::isDigit).take(5) }, singleLine = true)
+                        OutlinedTextField(
+                            value = port,
+                            onValueChange = { port = it.filter(Char::isDigit).take(5) },
+                            singleLine = true
+                        )
                         Spacer(Modifier.height(8.dp))
                         Text("Диапазон: 1024–65535", color = Muted, fontSize = 11.sp)
                     }
