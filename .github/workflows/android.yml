@@ -31,7 +31,10 @@ jobs:
           gradle-version: "8.9"
 
       - name: Build APK
-        run: gradle --no-daemon assembleDebug
+        env:
+          # Жестко ограничиваем память для Gradle и Kotlin, чтобы не превысить 7 ГБ раннера
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m -Dkotlin.daemon.jvmargs=-Xmx2048m"
+        run: gradle assembleDebug --no-daemon --max-workers=2 --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
