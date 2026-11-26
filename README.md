@@ -1,47 +1,35 @@
-# EasyHost
+# EasyHost 1.1.0
 
-Android local website host manager (Kotlin + Jetpack Compose).
+Android-приложение для запуска локальных статических сайтов на телефоне.
+Стек: Kotlin, Jetpack Compose, Android Storage Access Framework, NanoHTTPD.
 
-## Current implementation
-- Dark minimal UI
-- Select a project root using Android Storage Access Framework
-- Scan child folders as individual projects
-- Start/stop an HTTP server and configure its port
-- Serve static HTML, CSS, JavaScript, JSON and common image assets
+## Что изменено в 1.1.0
+- Запоминание выбранной папки через SharedPreferences.
+- Восстановление доступа к папке через persistable URI permission после перезапуска приложения.
+- Запоминание последнего выбранного проекта и порта.
+- Проверка, не отозвал ли Android доступ к сохранённой папке.
+- Переработанный тёмный интерфейс: более чёткая иерархия, карточка сервера, обновлённые карточки проектов.
+- Небольшие анимации статуса, выбора проекта и появления быстрых действий.
+- Быстрый переход в браузер, копирование локального адреса и LAN-адреса.
+- Обработка ошибки, если папка или проект стали недоступны.
 
-## PHP status
-PHP folders are detected (`index.php`), but PHP execution is **not enabled in this starter build**. Android does not include PHP. A real PHP mode requires bundling a PHP-CGI runtime for supported Android ABIs (for example arm64-v8a and armeabi-v7a), configuring its extensions and process lifecycle, and routing `.php` requests through CGI/FastCGI. This repository deliberately returns HTTP 501 for PHP files rather than pretending to execute them.
+## Как устроено запоминание папки
+При выборе директории через системный Android-пикер приложение запрашивает постоянное разрешение на чтение (и запись, если Android его выдаёт), а URI сохраняет в SharedPreferences. При следующем запуске приложение проверяет сохранённое разрешение и пробует восстановить список проектов. Если разрешение отозвано или папка удалена, EasyHost просит подключить её заново.
 
-## Build
-Open this folder in Android Studio (JDK 17), allow Gradle sync, then Build > Build Bundle(s) / APK(s) > Build APK(s).
+Удаление приложения, очистка его данных или отзыв разрешения Android сбрасывают возможность автоматического восстановления.
 
-## Storage
-On first launch, choose `Documents/Host` (create it in the Android file picker if it does not exist). Add one folder per site, with `index.html` for static sites.
+## Запуск
+1. Откройте папку `EasyHost` в Android Studio.
+2. Используйте JDK 17 и дождитесь Gradle Sync.
+3. Выберите **Build > Build Bundle(s) / APK(s) > Build APK(s)**.
 
-## Notes
-The current server is an in-app foreground-free prototype. Android may stop it when the app is backgrounded or the process is reclaimed. A production release should add a foreground service with a persistent notification, plus explicit lifecycle handling and LAN access controls.
+В ZIP не включён Gradle Wrapper. Если Android Studio попросит указать Gradle, выберите установленную совместимую версию или добавьте wrapper через Android Studio.
 
+## Структура папок
+Выберите корневую папку, например `Documents/Host`. Каждая вложенная папка считается отдельным сайтом. Для статического сайта нужен `index.html` или `index.htm`.
 
-## GitHub Actions: автоматическая сборка APK
-
-В репозитории уже добавлен workflow `.github/workflows/android.yml`.
-После отправки кода в ветку `main` или `master` GitHub Actions автоматически
-соберёт debug APK. Сборку также можно запустить вручную во вкладке **Actions**
-через workflow **Android APK**.
-
-Готовый файл появится в разделе **Artifacts** у завершённого запуска workflow
-под именем `EasyHost-debug-apk`. Это debug-сборка для установки и тестирования,
-а не подписанный релиз для Google Play.
-
-## Уведомление о работающем сервере
-
-Когда сервер успешно запускается, EasyHost показывает постоянное системное
-уведомление с названием проекта и локальным адресом. При остановке сервера
-уведомление убирается. На Android 13 и новее приложение запрашивает разрешение
-на уведомления; если пользователь запретит его, статус всё равно будет виден
-в интерфейсе приложения.
-
-Важно: это уведомление само по себе не превращает сервер в Android foreground
-service. Поэтому Android может ограничивать или завершать серверный процесс,
-если приложение долго находится в фоне. Для гарантированной фоновой работы
-потребуется отдельный foreground service.
+## Ограничения
+- Приложение раздаёт статические HTML/CSS/JavaScript-файлы.
+- PHP-файлы обнаруживаются, но PHP-код не исполняется: для этого нужен отдельный PHP runtime под Android.
+- LAN-доступ работает в пределах одной локальной сети Wi-Fi; маршрутизатор и настройки сети могут блокировать соединение.
+- Текущий сервер работает внутри процесса приложения, но пока не оформлен как полноценный Android Foreground Service. Система может остановить его в фоне.

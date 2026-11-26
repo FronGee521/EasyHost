@@ -30,7 +30,8 @@ class StaticSiteServer(
                 ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not found")
         }
         if (current.isDirectory) current = current.findFile("index.html")
-            ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "index.html not found")
+            ?: current.findFile("index.htm")
+            ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "index.html or index.htm not found")
         if (!current.isFile) return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not found")
         if (current.name?.endsWith(".php", true) == true) {
             return newFixedLengthResponse(
@@ -51,6 +52,14 @@ class StaticSiteServer(
             "webp" -> "image/webp"
             "ico" -> "image/x-icon"
             "txt" -> "text/plain; charset=utf-8"
+            "woff" -> "font/woff"
+            "woff2" -> "font/woff2"
+            "ttf" -> "font/ttf"
+            "otf" -> "font/otf"
+            "mp3" -> "audio/mpeg"
+            "wav" -> "audio/wav"
+            "mp4" -> "video/mp4"
+            "webm" -> "video/webm"
             else -> "application/octet-stream"
         }
         val stream = context.contentResolver.openInputStream(current.uri)
