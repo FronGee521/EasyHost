@@ -33,7 +33,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
-import androidx.compose.material.icons.rounded.Wifiguage
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -675,7 +675,7 @@ fun EasyHostApp() {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Icon(Icons.Rounded.Wifiguage, null, tint = Muted, modifier = Modifier.size(13.dp))
+                    Icon(Icons.Rounded.Language, null, tint = Muted, modifier = Modifier.size(13.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("HTML  ·  CSS  ·  JavaScript  ·  LAN", color = Muted, fontSize = 10.sp)
                 }
