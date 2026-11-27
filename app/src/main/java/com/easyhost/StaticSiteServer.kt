@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import fi.iki.elonen.NanoHTTPD
-import java.io.InputStream
 
 /**
  * Static HTML/CSS/JS server. PHP files are intentionally not executed by this class.
@@ -18,8 +17,14 @@ class StaticSiteServer(
 ) : NanoHTTPD("0.0.0.0", port) {
 
     override fun serve(session: IHTTPSession): Response {
+        // Decode each path segment separately and reject traversal attempts.
         val raw = session.uri.substringBefore('?').removePrefix("/")
-        val safe = raw.split('/').filter { it.isNotBlank() && it != "." && it != ".." }
+        val decoded = try { java.net.URLDecoder.decode(raw, "UTF-8") }
+            catch (_: Exception) { return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "Bad URL") }
+        val safe = decoded.split('/').filter { it.isNotBlank() }
+        if (safe.any { it == "." || it == ".." || it.contains('\\') || it.contains('\u0000') }) {
+            return newFixedLengthResponse(Response.Status.FORBIDDEN, MIME_PLAINTEXT, "Forbidden path")
+        }
         var current = DocumentFile.fromTreeUri(context, treeUri)
             ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Folder unavailable")
         current = current.findFile(projectName)
@@ -63,13 +68,10 @@ class StaticSiteServer(
         }
         val stream = context.contentResolver.openInputStream(current.uri)
             ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Cannot read file")
-        // Stream from the content provider instead of loading the entire asset into RAM.
-        val length = try { context.contentResolver.openFileDescriptor(current.uri, "r")?.use { it.statSize } ?: -1L }
-                     catch (_: Exception) { -1L }
-        return if (length >= 0L) {
-            newFixedLengthResponse(Response.Status.OK, mime, stream, length)
-        } else {
-            newChunkedResponse(Response.Status.OK, mime, stream)
-        }
+        // Stream files instead of loading the whole asset into RAM.
+        val response = newChunkedResponse(Response.Status.OK, mime, stream)
+        response.addHeader("X-Content-Type-Options", "nosniff")
+        response.addHeader("Cache-Control", "no-cache")
+        return response
     }
 }

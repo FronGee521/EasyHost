@@ -1,15 +1,16 @@
 package com.easyhost
 
 import android.content.Intent
-import android.content.BroadcastReceiver
-import android.content.IntentFilter
-import android.content.ClipboardManager
-import android.content.ClipData
-import android.widget.Toast
 import android.net.Uri
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.net.wifi.WifiManager
+import android.text.format.Formatter
 import android.os.Bundle
 import android.os.Build
 import android.content.pm.PackageManager
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -27,6 +28,8 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -47,6 +50,7 @@ private val Accent = Color(0xFF9BE37A)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        createServerNotificationChannel()
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED
@@ -56,9 +60,54 @@ class MainActivity : ComponentActivity() {
         setContent { EasyHostApp() }
     }
 
+    private fun createServerNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                SERVER_CHANNEL_ID,
+                "Состояние EasyHost",
+                android.app.NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Показывает, когда локальный веб-сервер EasyHost запущен"
+                setShowBadge(false)
+            }
+            getSystemService(android.app.NotificationManager::class.java)
+                .createNotificationChannel(channel)
+        }
+    }
 }
 
-private const val PREFS = "easyhost_settings"
+private const val SERVER_CHANNEL_ID = "easyhost_server_status"
+private const val SERVER_NOTIFICATION_ID = 4101
+
+private fun showServerNotification(context: android.content.Context, port: String, projectName: String) {
+    if (Build.VERSION.SDK_INT >= 33 &&
+        ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+    ) return
+
+    val notification = NotificationCompat.Builder(context, SERVER_CHANNEL_ID)
+        .setSmallIcon(android.R.drawable.ic_media_play)
+        .setContentTitle("Изи Хост: сервер активен")
+        .setContentText("$projectName · http://127.0.0.1:$port")
+        .setStyle(NotificationCompat.BigTextStyle().bigText(
+            "Проект «$projectName» раздаётся на порту $port.\nАдрес: http://127.0.0.1:$port"
+        ))
+        .setCategory(NotificationCompat.CATEGORY_SERVICE)
+        .setPriority(NotificationCompat.PRIORITY_LOW)
+        .setOngoing(true)
+        .setOnlyAlertOnce(true)
+        .build()
+
+    try {
+        NotificationManagerCompat.from(context).notify(SERVER_NOTIFICATION_ID, notification)
+    } catch (_: SecurityException) {
+        // Notifications may be disabled by the user or denied by Android.
+    }
+}
+
+private fun hideServerNotification(context: android.content.Context) {
+    NotificationManagerCompat.from(context).cancel(SERVER_NOTIFICATION_ID)
+}
 
 data class Site(val name: String, val uri: Uri, val hasIndex: Boolean, val hasPhp: Boolean)
 
@@ -66,39 +115,15 @@ data class Site(val name: String, val uri: Uri, val hasIndex: Boolean, val hasPh
 @Composable
 fun EasyHostApp() {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE) }
+    val prefs = remember { context.getSharedPreferences("easyhost_settings", android.content.Context.MODE_PRIVATE) }
     var rootUri by remember { mutableStateOf(prefs.getString("root_uri", null)?.let(Uri::parse)) }
     var sites by remember { mutableStateOf(listOf<Site>()) }
     var selected by remember { mutableStateOf<Site?>(null) }
     var port by remember { mutableStateOf(prefs.getString("port", "8080") ?: "8080") }
     var server by remember { mutableStateOf<StaticSiteServer?>(null) }
-    var running by remember { mutableStateOf(prefs.getBoolean("server_running", false)) }
+    var running by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Выберите папку Host") }
     var showSettings by remember { mutableStateOf(false) }
-
-    DisposableEffect(context) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
-                when (intent?.action) {
-                    ServerForegroundService.ACTION_STARTED -> {
-                        running = true
-                        status = "Сервер запущен"
-                    }
-                    ServerForegroundService.ACTION_FAILED -> {
-                        running = false
-                        status = intent?.getStringExtra(ServerForegroundService.EXTRA_ERROR) ?: "Ошибка запуска"
-                    }
-                }
-            }
-        }
-        val filter = IntentFilter().apply {
-            addAction(ServerForegroundService.ACTION_STARTED)
-            addAction(ServerForegroundService.ACTION_FAILED)
-        }
-        if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(receiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
-        else context.registerReceiver(receiver, filter)
-        onDispose { try { context.unregisterReceiver(receiver) } catch (_: Exception) { } }
-    }
 
     fun scan(uri: Uri) {
         val root = DocumentFile.fromTreeUri(context, uri)
@@ -108,16 +133,13 @@ fun EasyHostApp() {
                 children.any { it.name.equals("index.html", true) },
                 children.any { it.name.equals("index.php", true) })
         }?.sortedBy { it.name.lowercase() } ?: emptyList()
-        selected = sites.firstOrNull { it.name == prefs.getString("selected_project", null) }
+        val saved = prefs.getString("selected_project", null)
+        if (selected == null && saved != null) selected = sites.firstOrNull { it.name == saved }
     }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
-            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            try { context.contentResolver.takePersistableUriPermission(uri, flags) }
-            catch (_: SecurityException) {
-                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             rootUri = uri
             prefs.edit().putString("root_uri", uri.toString()).apply()
             scan(uri)
@@ -125,15 +147,19 @@ fun EasyHostApp() {
         }
     }
 
-    LaunchedEffect(rootUri) {
-        rootUri?.let { uri ->
-            try { scan(uri) }
-            catch (_: Exception) {
-                rootUri = null
-                prefs.edit().remove("root_uri").remove("selected_project").apply()
-                status = "Доступ к папке потерян. Подключите её заново."
-            }
-        }
+    LaunchedEffect(rootUri) { rootUri?.let { scan(it) } }
+    LaunchedEffect(selected) { prefs.edit().putString("selected_project", selected?.name).apply() }
+    LaunchedEffect(port) { prefs.edit().putString("port", port).apply() }
+
+    fun lanIp(): String? = try {
+        val wifi = context.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as WifiManager
+        val ip = wifi.connectionInfo.ipAddress
+        if (ip == 0) null else Formatter.formatIpAddress(ip)
+    } catch (_: Exception) { null }
+    fun copyAddress(value: String) {
+        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("EasyHost URL", value))
+        android.widget.Toast.makeText(context, "Ссылка скопирована", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     MaterialTheme(colorScheme = darkColorScheme(
@@ -175,58 +201,54 @@ fun EasyHostApp() {
                                     else if (p == null || p !in 1024..65535) status = "Порт должен быть 1024–65535"
                                     else {
                                         try {
-                                            prefs.edit().putString("selected_project", site.name).putString("port", port).apply()
-                                            val serviceIntent = Intent(context, ServerForegroundService::class.java).apply {
-                                                action = ServerForegroundService.ACTION_START
-                                                putExtra(ServerForegroundService.EXTRA_TREE, site.uri.toString())
-                                                putExtra(ServerForegroundService.EXTRA_PROJECT, site.name)
-                                                putExtra(ServerForegroundService.EXTRA_PORT, p)
-                                            }
-                                            if (Build.VERSION.SDK_INT >= 26) ContextCompat.startForegroundService(context, serviceIntent)
-                                            else context.startService(serviceIntent)
+                                            server?.stop()
+                                            server = StaticSiteServer(context, site.uri, site.name, p).also { it.start() }
                                             running = true
-                                            status = "Запуск ${site.name}…"
-                                        } catch (e: Exception) {
-                                            running = false
-                                            status = e.message ?: "Ошибка запуска"
-                                        }
+                                            status = "Раздаётся ${site.name}"
+                                            showServerNotification(context, port, site.name)
+                                        } catch (e: Exception) { running = false; hideServerNotification(context); status = e.message ?: "Ошибка запуска" }
                                     }
                                 },
                                 enabled = !running,
                                 colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Bg),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f).height(52.dp), contentPadding = PaddingValues(horizontal = 6.dp)
                             ) { Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Запустить") }
                             OutlinedButton(onClick = {
-                                context.startService(Intent(context, ServerForegroundService::class.java).setAction(ServerForegroundService.ACTION_STOP))
-                                running = false
-                                status = "Сервер остановлен"
-                            }, enabled = running, modifier = Modifier.weight(1f)) {
+                                server?.stop(); server = null; running = false; status = "Сервер остановлен"; hideServerNotification(context)
+                            }, enabled = running, modifier = Modifier.weight(1f).height(52.dp), contentPadding = PaddingValues(horizontal = 6.dp)) {
                                 Icon(Icons.Rounded.Stop, null); Spacer(Modifier.width(6.dp)); Text("Стоп")
                             }
                         }
-                        if (running) {
-                            Spacer(Modifier.height(10.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                OutlinedButton(
-                                    onClick = {
-                                        val url = "http://127.0.0.1:$port"
-                                        try {
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                                        } catch (_: Exception) {
-                                            Toast.makeText(context, "Не найден браузер", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                ) { Icon(Icons.Rounded.Language, null); Spacer(Modifier.width(6.dp)); Text("Открыть") }
-                                OutlinedButton(
-                                    onClick = {
-                                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        clipboard.setPrimaryClip(ClipData.newPlainText("EasyHost URL", "http://127.0.0.1:$port"))
-                                        Toast.makeText(context, "Ссылка скопирована", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                ) { Text("Копировать ссылку") }
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://127.0.0.1:$port"))) }
+                                    catch (_: Exception) { status = "Не удалось открыть браузер" }
+                                },
+                                enabled = running,
+                                modifier = Modifier.weight(1f).height(52.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp)
+                            ) {
+                                Icon(Icons.Rounded.Language, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp)); Text("Открыть", maxLines = 1, fontSize = 12.sp)
                             }
+                            OutlinedButton(
+                                onClick = {
+                                    val ip = lanIp()
+                                    if (ip != null) copyAddress("http://$ip:$port") else status = "Не удалось определить IP Wi-Fi"
+                                },
+                                enabled = running,
+                                modifier = Modifier.weight(1f).height(52.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp)
+                            ) {
+                                Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp)); Text("Копировать LAN", maxLines = 1, fontSize = 12.sp)
+                            }
+                        }
+                        if (running) {
+                            Spacer(Modifier.height(8.dp))
+                            Text("Для других устройств: ${lanIp()?.let { "http://$it:$port" } ?: "IP Wi-Fi недоступен"}", color = Muted, fontSize = 11.sp)
                         }
                     }
                 }
@@ -251,12 +273,9 @@ fun EasyHostApp() {
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                         items(sites) { site ->
-                            val active = selected?.uri == site.uri
+                            val active = selected?.name == site.name
                             Card(
-                                modifier = Modifier.fillMaxWidth().clickable {
-                                    selected = site
-                                    prefs.edit().putString("selected_project", site.name).apply()
-                                },
+                                modifier = Modifier.fillMaxWidth().clickable { selected = site },
                                 colors = CardDefaults.cardColors(containerColor = if (active) Color(0xFF252B25) else Panel),
                                 shape = RoundedCornerShape(14.dp)
                             ) {
@@ -301,10 +320,7 @@ fun EasyHostApp() {
                         Text("Диапазон: 1024–65535", color = Muted, fontSize = 11.sp)
                     }
                 },
-                confirmButton = { TextButton(onClick = {
-                    prefs.edit().putString("port", port).apply()
-                    showSettings = false
-                }) { Text("Готово") } }
+                confirmButton = { TextButton(onClick = { showSettings = false }) { Text("Готово") } }
             )
         }
     }
