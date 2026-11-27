@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import fi.iki.elonen.NanoHTTPD
-import java.io.ByteArrayInputStream
 import java.io.InputStream
 
 /**
@@ -64,7 +63,13 @@ class StaticSiteServer(
         }
         val stream = context.contentResolver.openInputStream(current.uri)
             ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Cannot read file")
-        val bytes = stream.use { it.readBytes() }
-        return newFixedLengthResponse(Response.Status.OK, mime, ByteArrayInputStream(bytes), bytes.size.toLong())
+        // Stream from the content provider instead of loading the entire asset into RAM.
+        val length = try { context.contentResolver.openFileDescriptor(current.uri, "r")?.use { it.statSize } ?: -1L }
+                     catch (_: Exception) { -1L }
+        return if (length >= 0L) {
+            newFixedLengthResponse(Response.Status.OK, mime, stream, length)
+        } else {
+            newChunkedResponse(Response.Status.OK, mime, stream)
+        }
     }
 }
