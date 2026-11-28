@@ -10,7 +10,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import fi.iki.elonen.NanoHTTPD
 import java.util.concurrent.Executors
 
 class ServerForegroundService : Service() {
@@ -39,18 +38,18 @@ class ServerForegroundService : Service() {
                     return START_NOT_STICKY
                 }
 
-                // Promote immediately; Android requires this shortly after startForegroundService().
                 startForeground(NOTIFICATION_ID, buildNotification(project, port))
                 executor.execute {
                     try {
                         stopServer()
                         server = StaticSiteServer(this, tree, project, port).also {
-                            it.start(5_000, false)
+                            // 60 c на чтение — чтобы большие загрузки не обрывались
+                            it.start(60_000, false)
                         }
-                        getSharedPreferences("easyhost_settings", MODE_PRIVATE).edit().putBoolean("server_running", true).apply()
+                        setRunning(true)
                         broadcast(ACTION_STARTED, null)
                     } catch (e: Exception) {
-                        getSharedPreferences("easyhost_settings", MODE_PRIVATE).edit().putBoolean("server_running", false).apply()
+                        setRunning(false)
                         broadcast(ACTION_FAILED, e.message ?: "Не удалось запустить сервер")
                         stopServer()
                         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -63,12 +62,12 @@ class ServerForegroundService : Service() {
     }
 
     private fun buildNotification(project: String, port: Int): Notification {
-        val stopIntent = Intent(this, ServerForegroundService::class.java).setAction(ACTION_STOP)
         val stopPending = PendingIntent.getService(
-            this, 71, stopIntent,
+            this, 71,
+            Intent(this, ServerForegroundService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val openIntent = PendingIntent.getActivity(
+        val openPending = PendingIntent.getActivity(
             this, 72, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -76,7 +75,7 @@ class ServerForegroundService : Service() {
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle("Изи Хост · сервер работает")
             .setContentText("$project · http://127.0.0.1:$port")
-            .setContentIntent(openIntent)
+            .setContentIntent(openPending)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
@@ -97,6 +96,11 @@ class ServerForegroundService : Service() {
         }
     }
 
+    private fun setRunning(value: Boolean) {
+        getSharedPreferences("easyhost_settings", MODE_PRIVATE)
+            .edit().putBoolean("server_running", value).apply()
+    }
+
     private fun broadcast(action: String, error: String?) {
         sendBroadcast(Intent(action).setPackage(packageName).putExtra(EXTRA_ERROR, error))
     }
@@ -104,7 +108,7 @@ class ServerForegroundService : Service() {
     private fun stopServer() {
         try { server?.stop() } catch (_: Exception) { }
         server = null
-        getSharedPreferences("easyhost_settings", MODE_PRIVATE).edit().putBoolean("server_running", false).apply()
+        setRunning(false)
     }
 
     override fun onDestroy() {
